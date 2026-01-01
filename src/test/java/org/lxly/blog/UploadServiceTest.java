@@ -24,7 +24,7 @@ public class UploadServiceTest {
     public void testRealUploadToMinIO() {
         try {
             // 1. Create a dummy file
-            String content = "Hello MinIO, this is a test upload!";
+            String content = "Hello MinIO, this is a new test upload!";
             MultipartFile file = new MockMultipartFile(
                     "file",
                     "integration-test.txt",
