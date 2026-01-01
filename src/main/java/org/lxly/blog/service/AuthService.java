@@ -1,20 +1,23 @@
 package org.lxly.blog.service;
 
 import lombok.RequiredArgsConstructor;
-import org.lxly.blog.enums.VerifyCodeType;
 import org.lxly.blog.dto.request.*;
 import org.lxly.blog.dto.response.UserInfoDto;
-import org.lxly.blog.entity.*;
+import org.lxly.blog.entity.User;
+import org.lxly.blog.entity.VerifyCode;
+import org.lxly.blog.enums.VerifyCodeType;
 import org.lxly.blog.exception.BizException;
-import org.lxly.blog.repository.*;
+import org.lxly.blog.repository.SettingsRepository;
+import org.lxly.blog.repository.UserRepository;
+import org.lxly.blog.repository.VerifyCodeRepository;
 import org.lxly.blog.util.EmailUtil;
-import org.springframework.beans.factory.annotation.Value;          // ← 这里使用 Spring 的 @Value
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.Random;
 
 @Service
 @RequiredArgsConstructor
@@ -24,7 +27,10 @@ public class AuthService {
     private final VerifyCodeRepository codeRepo;
     private final SettingsRepository settingsRepo;
     private final PasswordEncoder passwordEncoder;
-    private final EmailUtil emailUtil;   // 注入
+
+    // ✅ 注入 EmailUtil 实例（取代静态调用）
+    private final EmailUtil emailUtil;
+
     /** 发件人（从配置中读取） */
     @Value("${spring.mail.username}")
     private String mailFrom;
@@ -34,8 +40,8 @@ public class AuthService {
     public void register(RegisterRequest req) {
         // 1️⃣ 校验验证码
         VerifyCode vc = codeRepo.findTopByEmailAndTypeOrderByExpireAtDesc(
-                req.getEmail(),
-                VerifyCodeType.REGISTER.getValue())
+                        req.getEmail(),
+                        VerifyCodeType.REGISTER.getValue())
                 .orElseThrow(() -> new BizException(2001, "验证码不存在"));
 
         if (vc.getUsed() || vc.getExpireAt().isBefore(LocalDateTime.now())) {
@@ -102,7 +108,7 @@ public class AuthService {
                 .build();
         codeRepo.save(vc);
 
-        // ④ 发送邮件（同步或异步均可，这里直接调用工具类）
+        // ④ 发送邮件（使用注入的实例方法）
         String subject = switch (vt) {
             case REGISTER -> "GL‑Blog 注册验证码";
             case PASSWORD_RESET -> "GL‑Blog 找回密码验证码";
@@ -110,7 +116,9 @@ public class AuthService {
         String html = """
                 <p>亲爱的用户，您的验证码是 <strong>%s</strong>，有效期 10 分钟。</p>
                 """.formatted(code);
-        EmailUtil.sendHtmlMail(mailFrom, email, subject, html);
+
+        // ✅ 实例调用
+        emailUtil.sendHtmlMail(mailFrom, email, subject, html);
     }
 
     /** 校验验证码（找回密码、修改邮箱等） */
@@ -163,6 +171,4 @@ public class AuthService {
         }
         userRepo.save(user);
     }
-
-
 }

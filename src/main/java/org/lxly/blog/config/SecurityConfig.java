@@ -1,29 +1,34 @@
 package org.lxly.blog.config;
 
 import io.jsonwebtoken.Claims;
-import jakarta.servlet.*;
-import jakarta.servlet.http.*;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.*;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
-import org.springframework.security.authentication.*;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-import org.springframework.security.config.annotation.web.*;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.http.*;
-import org.springframework.security.core.*;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.*;
-import org.springframework.security.crypto.bcrypt.*;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.*;
-import org.springframework.security.web.authentication.*;
-import org.springframework.security.web.util.matcher.*;
-import org.springframework.web.cors.*;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
@@ -49,40 +54,43 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(unauthorizedHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/api/auth/**",
+                                "/api/user-login",
+                                "/api/user-register",
+                                "/api/send-verification-code",
+                                "/api/reset-password",
                                 "/api/settings/**",
                                 "/api/post/**",
                                 "/api/posts",
                                 "/api/stats",
                                 "/api/server-status",
-                                "/api/about",
-                                "/static/**",
-                                "/**/*.html",
-                                "/**/*.css",
-                                "/**/*.js",
-                                "/favicon.ico"
+                                "/api/about"
                         ).permitAll()
-                        .anyRequest().authenticated())
+                        // ✅ 放行 Spring Boot 常规静态资源位置
+                        .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
+                        // ✅ 放行你这套纯静态页面（都在 static 根目录）
+                        .requestMatchers("/", "/*.html", "/BG/**", "/favicon.ico").permitAll()
+                        .anyRequest().authenticated()
+                )
                 .addFilterBefore(new JwtAuthFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 
+    // ✅ 修复 CORS：JWT Header 模式，一般不需要 cookie，所以 allowCredentials(false)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of("*"));
-        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
+        config.setAllowCredentials(false); // ✅ 关键：否则 * 会报错
         config.setMaxAge(3600L);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
     }
 
-    // ------------------------------------------------------------
-    // JWT 过滤器（解析 token → Authentication → 放入 Context）
-    // ------------------------------------------------------------
     static class JwtAuthFilter extends OncePerRequestFilter {
 
         private final JwtUtil jwtUtil;
@@ -103,18 +111,21 @@ public class SecurityConfig {
                     Claims claims = jwtUtil.parseToken(token);
                     Long userId = Long.valueOf(claims.getSubject());
                     Boolean isAdmin = claims.get("admin", Boolean.class);
+
                     List<GrantedAuthority> authorities = new ArrayList<>();
                     authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
                     if (Boolean.TRUE.equals(isAdmin)) {
                         authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
                     }
+
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(userId, null, authorities);
+
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 } catch (Exception ignored) {
-                    // 解析异常 → 交给 AuthenticationEntryPoint 统一处理
                 }
             }
+
             filterChain.doFilter(request, response);
         }
     }

@@ -16,17 +16,21 @@ spring:
     show-sql: false
 
   mail:
-    host: localhost
-    port: 1025                     # ??? MailHog / FakeSMTP ??
-    username: test
-    password: test
+    host: smtp.qq.com
+    port: 465
+    username: 2945706262@qq.com
+    password: yplgrzlnexubddad
+    protocol: smtps
     properties:
       mail:
         smtp:
-          auth: false
-          starttls:
-            enable: false
-
+          auth: true
+          ssl:
+            enable: true
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
 minio:
   endpoint: http://127.0.0.1:9000
   access-key: admin

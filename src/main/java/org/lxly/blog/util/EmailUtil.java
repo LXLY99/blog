@@ -1,57 +1,44 @@
 package org.lxly.blog.util;
 
 import jakarta.mail.internet.MimeMessage;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 
-/**
- * 采用 static 方法的实现（内部使用一次性保存的 static JavaMailSender）。
- * 仍然是一个 Spring Bean，Spring 启动时会把 mailSender 注入到 static 变量里。
- */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class EmailUtil {
 
-    /** 真实的 JavaMailSender，由 Spring 注入后放入 static 变量 */
-    private static JavaMailSender staticMailSender;
-
-    /** 让 Spring 在 Bean 初始化时把 mailSender 赋给 static 变量 */
-    @Autowired
-    public EmailUtil(@Lazy JavaMailSender mailSender) {
-        EmailUtil.staticMailSender = mailSender;
-    }
+    private final JavaMailSender mailSender;
 
     /**
-     * 静态入口：发送 HTML 邮件。
-     *
-     * @param from        发件人
-     * @param to          收件人
-     * @param subject     邮件标题
-     * @param htmlContent HTML 正文
+     * Asynchronously sends an HTML email.
+     * Uses the standard Spring JavaMailSender configured in application.yml.
      */
-    public static void sendHtmlMail(String from, String to, String subject, String htmlContent) {
-        if (staticMailSender == null) {
-            log.error("JavaMailSender 还未初始化，无法发送邮件");
-            throw new IllegalStateException("邮件发送组件未准备好");
-        }
-        MimeMessage message = staticMailSender.createMimeMessage();
+    @Async
+    public void sendHtmlMail(String from, String to, String subject, String htmlContent) {
+        log.info("Attempting to send email to: {}", to);
         try {
-            MimeMessageHelper helper = new MimeMessageHelper(
-                    message, true, StandardCharsets.UTF_8.name());
+            MimeMessage message = mailSender.createMimeMessage();
+            // 'true' indicates this is a multipart message (supports HTML/Attachments)
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());
+
             helper.setFrom(from);
             helper.setTo(to);
             helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-            staticMailSender.send(message);
+            helper.setText(htmlContent, true); // true = interpret as HTML
+
+            mailSender.send(message);
+            log.info("✅ Email successfully sent to: {}", to);
         } catch (Exception e) {
-            log.error("邮件发送失败", e);
-            throw new RuntimeException("邮件发送失败", e);
+            log.error("❌ Failed to send email to: {}", to, e);
+            // In a real async scenario, you might want to send this to a dead-letter queue
         }
     }
 }
