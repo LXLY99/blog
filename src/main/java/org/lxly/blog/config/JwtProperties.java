@@ -1,16 +1,20 @@
 package org.lxly.blog.config;
 
-import lombok.*;
+import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-@Getter
-@Setter
+@Data
 @Component
-@ConfigurationProperties(prefix = "jwt")
+@ConfigurationProperties(prefix = "blog.jwt") // ✅ Must match the YAML indentation
 public class JwtProperties {
-    /** HMAC secret（BASE64 编码） */
+    /**
+     * Secret key for signing the token
+     */
     private String secret;
-    /** 失效时间（毫秒） */
-    private long expiration;
+
+    /**
+     * Expiration time in milliseconds
+     */
+    private Long expiration;
 }

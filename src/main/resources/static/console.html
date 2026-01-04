@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>控制台 - GL-Blog</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #333; }
+        .navbar { background: #000; color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .navbar a { color: white; text-decoration: none; font-weight: 500; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn { padding: 8px 16px; border-radius: 6px; text-decoration: none; color: white; background: #000; font-size: 0.9rem; border: none; cursor: pointer; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 15px 20px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #fafafa; font-weight: 600; font-size: 0.9rem; color: #666; }
+        tr:last-child td { border-bottom: none; }
+        .action-btn { color: #666; margin-right: 15px; cursor: pointer; text-decoration: none; font-size: 0.9rem; display: inline-block; }
+        .action-btn:hover { color: #000; text-decoration: underline; }
+        .delete-btn { color: #d32f2f; }
+        .delete-btn:hover { color: #b71c1c; }
+        .edit-btn { color: #1976d2; font-weight: 500; }
+        .edit-btn:hover { color: #0d47a1; }
+    </style>
+</head>
+<body>
+<div class="navbar">
+    <span>GL-Blog 控制台</span>
+    <div>
+        <a href="/index.html">返回首页</a>
+    </div>
+</div>
+
+<div class="container">
+    <div class="header">
+        <h2>文章管理</h2>
+        <a href="/write.html" class="btn">+ 写文章</a>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+            <tr>
+                <th style="width: 40%;">标题</th>
+                <th>分类</th>
+                <th>日期</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="postList">
+            <tr><td colspan="4" style="text-align:center; color:#999; padding: 30px;">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Result/JWT Helper
+    (function(){const t="gl_blog_token",e=window.fetch?window.fetch.bind(window):null;if(e){window.getAuthToken=()=>localStorage.getItem(t)||"",window.setAuthToken=e=>localStorage.setItem(t,e),window.clearAuthToken=()=>localStorage.removeItem(t),window.fetch=async(n,o={})=>{const a=window.getAuthToken(),r=o?{...o}:{},s=new Headers(r.headers||{});s.has("Accept")||s.set("Accept","application/json"),a&&!s.has("Authorization")&&s.set("Authorization",`Bearer ${a}`),r.headers=s;const i=await e(n,r),c=(i.headers.get("content-type")||"").toLowerCase();if(!c.includes("application/json"))return i;let l=null;try{l=await i.clone().json()}catch(t){return i}return l&&"object"==typeof l&&Object.prototype.hasOwnProperty.call(l,"code")?0===l.code?new Proxy(i,{get:(t,e)=>"json"===e?async()=>l.data:"function"==typeof t[e]?t[e].bind(t):t[e]}):new Proxy(i,{get:(t,e)=>"ok"===e?!1:"status"===e?t.status>=400?t.status:400:"json"===e?async()=>({error:l.message||"请求失败",code:l.code}):"text"===e?async()=>l.message||"请求失败":"function"==typeof t[e]?t[e].bind(t):t[e]}):i}}})();
+
+    async function loadPosts() {
+        try {
+            const res = await fetch('/api/posts');
+            if (!res.ok) throw new Error('Failed to load');
+            const posts = await res.json();
+
+            const tbody = document.getElementById('postList');
+            if (!posts || posts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#999; padding: 30px;">暂无文章</td></tr>';
+                return;
+            }
+
+            // 🔥 Generate HTML with Edit Button
+            tbody.innerHTML = posts.map(post => `
+          <tr>
+            <td>${post.title}</td>
+            <td>${post.category || '-'}</td>
+            <td>${new Date(post.createdAt).toLocaleDateString()}</td>
+            <td>
+              <a href="/post.html?slug=${post.slug}" target="_blank" class="action-btn">查看</a>
+              <a href="/write.html?slug=${post.slug}" class="action-btn edit-btn">编辑</a>
+              <button onclick="deletePost(${post.id})" class="action-btn delete-btn" style="background:none; border:none; padding:0; font:inherit;">删除</button>
+            </td>
+          </tr>
+        `).join('');
+        } catch (e) {
+            console.error(e);
+            document.getElementById('postList').innerHTML = '<tr><td colspan="4" style="text-align:center; color:red;">加载失败，请确认是否已登录</td></tr>';
+        }
+    }
+
+    async function deletePost(id) {
+        if (!confirm('确定要删除吗？')) return;
+        try {
+            const res = await fetch(`/api/admin/post/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                loadPosts();
+            } else {
+                alert('删除失败');
+            }
+        } catch (e) {
+            alert('出错: ' + e.message);
+        }
+    }
+
+    // Check Admin status on load
+    fetch('/api/user-info').then(res => {
+        if (!res.ok) {
+            window.location.href = '/login.html';
+            return null;
+        }
+        return res.json();
+    }).then(user => {
+        if (user) {
+            if (!user.isAdmin) {
+                alert('权限不足');
+                window.location.href = '/index.html';
+            } else {
+                loadPosts();
+            }
+        }
+    });
+</script>
+</body>
+</html>

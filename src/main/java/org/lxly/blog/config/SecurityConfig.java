@@ -6,6 +6,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -24,10 +25,10 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @Configuration
@@ -50,9 +51,11 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // ✅ 启用 CORS，并使用下面定义的 corsConfigurationSource
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(unauthorizedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        // 1. 放行 API
                         .requestMatchers(
                                 "/api/user-login",
                                 "/api/user-register",
@@ -63,12 +66,13 @@ public class SecurityConfig {
                                 "/api/posts",
                                 "/api/stats",
                                 "/api/server-status",
-                                "/api/about"
+                                "/api/about",
+                                "/api/upload/**"
                         ).permitAll()
-                        // ✅ 放行 Spring Boot 常规静态资源位置
+                        // 2. 放行静态资源
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
-                        // ✅ 放行你这套纯静态页面（都在 static 根目录）
-                        .requestMatchers("/", "/*.html", "/BG/**", "/favicon.ico").permitAll()
+                        .requestMatchers("/", "/*.html", "/BG/**", "/favicon.ico", "/uploads/**").permitAll()
+                        // 3. 其他需认证
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new JwtAuthFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
@@ -76,14 +80,23 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // ✅ 修复 CORS：JWT Header 模式，一般不需要 cookie，所以 allowCredentials(false)
+    /**
+     * ✅ 核心修复：Spring Security 全局 CORS 配置
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(false); // ✅ 关键：否则 * 会报错
+
+        // 🟢 关键点：使用 allowedOriginPatterns 代替 allowedOrigins
+        // 这样即使 allowCredentials 为 true，也可以使用通配符 *
+        config.setAllowedOriginPatterns(Collections.singletonList("*"));
+
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"));
+        config.setAllowedHeaders(Collections.singletonList("*"));
+
+        // 🟢 允许携带凭证
+        config.setAllowCredentials(true);
+
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -91,6 +104,9 @@ public class SecurityConfig {
         return source;
     }
 
+    /**
+     * JWT 过滤器
+     */
     static class JwtAuthFilter extends OncePerRequestFilter {
 
         private final JwtUtil jwtUtil;
@@ -123,6 +139,7 @@ public class SecurityConfig {
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 } catch (Exception ignored) {
+                    // Token 无效不抛异常，由 Spring Security 后续处理
                 }
             }
 

@@ -1,13 +1,13 @@
 package org.lxly.blog.service;
 
 import lombok.RequiredArgsConstructor;
-import org.lxly.blog.dto.request.*;
+import org.lxly.blog.dto.request.LoginRequest;
+import org.lxly.blog.dto.request.RegisterRequest;
+import org.lxly.blog.dto.request.UpdateProfileRequest;
 import org.lxly.blog.dto.response.UserInfoDto;
 import org.lxly.blog.entity.User;
 import org.lxly.blog.entity.VerifyCode;
-import org.lxly.blog.enums.VerifyCodeType;
 import org.lxly.blog.exception.BizException;
-import org.lxly.blog.repository.SettingsRepository;
 import org.lxly.blog.repository.UserRepository;
 import org.lxly.blog.repository.VerifyCodeRepository;
 import org.lxly.blog.util.EmailUtil;
@@ -23,152 +23,157 @@ import java.util.Random;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final UserRepository userRepo;
-    private final VerifyCodeRepository codeRepo;
-    private final SettingsRepository settingsRepo;
+    private final UserRepository userRepository;
+    private final VerifyCodeRepository verifyCodeRepository;
     private final PasswordEncoder passwordEncoder;
-
-    // ✅ 注入 EmailUtil 实例（取代静态调用）
     private final EmailUtil emailUtil;
 
-    /** 发件人（从配置中读取） */
     @Value("${spring.mail.username}")
-    private String mailFrom;
+    private String fromEmail;
 
-    /** 注册（带验证码校验） */
-    @Transactional
-    public void register(RegisterRequest req) {
-        // 1️⃣ 校验验证码
-        VerifyCode vc = codeRepo.findTopByEmailAndTypeOrderByExpireAtDesc(
-                        req.getEmail(),
-                        VerifyCodeType.REGISTER.getValue())
-                .orElseThrow(() -> new BizException(2001, "验证码不存在"));
-
-        if (vc.getUsed() || vc.getExpireAt().isBefore(LocalDateTime.now())) {
-            throw new BizException(2002, "验证码已失效或已使用");
-        }
-        if (!vc.getCode().equals(req.getCode())) {
-            throw new BizException(2003, "验证码错误");
-        }
-
-        // 2️⃣ 检查邮箱 / 用户名唯一性
-        if (userRepo.findByEmail(req.getEmail()).isPresent()) {
-            throw new BizException(2004, "邮箱已被占用");
-        }
-        if (userRepo.findByUsername(req.getUsername()).isPresent()) {
-            throw new BizException(2005, "用户名已被占用");
-        }
-
-        // 3️⃣ 创建用户（密码使用 BCrypt 加密）
-        User user = User.builder()
-                .email(req.getEmail())
-                .username(req.getUsername())
-                .password(passwordEncoder.encode(req.getPassword()))
-                .nickname(req.getUsername())
-                .isAdmin(false)
-                .build();
-        userRepo.save(user);
-
-        // 4️⃣ 标记验证码已使用
-        vc.setUsed(true);
-        codeRepo.save(vc);
-    }
-
-    /** 登录校验（返回 User 实体，实际 token 由 Controller 生成） */
     public User login(LoginRequest req) {
-        User user = userRepo.findByEmail(req.getEmail())
-                .orElseThrow(() -> new BizException(3001, "账号不存在"));
+        User user = userRepository.findByEmail(req.getEmail())
+                .orElseThrow(() -> new BizException("User does not exist"));
+
         if (!passwordEncoder.matches(req.getPassword(), user.getPassword())) {
-            throw new BizException(3002, "密码错误");
+            throw new BizException("Incorrect password");
         }
         return user;
     }
 
-    /** 发送验证码（注册 / 找回密码） */
-    public void sendVerificationCode(String email, String type) {
-        // ① 将外部传入的字符串转成枚举（统一使用大写下划线形式）
-        VerifyCodeType vt;
-        try {
-            vt = VerifyCodeType.valueOf(
-                    type.toUpperCase().replace('-', '_'));
-        } catch (IllegalArgumentException e) {
-            throw new BizException(4001, "不支持的验证码类型");
+    @Transactional
+    public void register(RegisterRequest req) {
+        // 1. Verify Code
+        verifyCode(req.getEmail(), req.getCode(), "register");
+
+        // 2. Check Uniqueness
+        if (userRepository.findByEmail(req.getEmail()).isPresent()) {
+            throw new BizException("Email already registered");
+        }
+        if (userRepository.findByUsername(req.getUsername()).isPresent()) {
+            throw new BizException("Username already taken");
         }
 
-        // ② 随机生成 6 位数字验证码
-        String code = String.format("%06d", new Random().nextInt(999_999));
+        // 3. Create User
+        User user = User.builder()
+                .username(req.getUsername())
+                .email(req.getEmail())
+                .password(passwordEncoder.encode(req.getPassword()))
+                .nickname(req.getUsername())
+                .isAdmin(false)
+                .build();
 
-        // ③ 保存验证码记录
+        userRepository.save(user);
+    }
+
+    public void sendVerificationCode(String email, String typeStr) {
+        // ✅ NEW: Check if user exists for password reset
+        // This prevents sending codes to unregistered emails
+        if ("password-reset".equals(typeStr)) {
+            if (userRepository.findByEmail(email).isEmpty()) {
+                throw new BizException("This email is not registered");
+            }
+        }
+
+        // 1. Check Rate Limit (1 minute)
+        LocalDateTime oneMinuteAgo = LocalDateTime.now().minusMinutes(1);
+        long count = verifyCodeRepository.countByEmailAndTypeAndCreatedAtAfter(email, typeStr, oneMinuteAgo);
+        if (count > 0) {
+            throw new BizException("Too many requests, please try again later");
+        }
+
+        // 2. Generate Code
+        String code = String.valueOf(new Random().nextInt(900000) + 100000);
+
+        // 3. Save to DB
         VerifyCode vc = VerifyCode.builder()
                 .email(email)
                 .code(code)
-                .type(vt.getValue())               // 将枚举的 string value 写入 DB
+                .type(typeStr)
                 .expireAt(LocalDateTime.now().plusMinutes(10))
                 .used(false)
                 .build();
-        codeRepo.save(vc);
+        verifyCodeRepository.save(vc);
 
-        // ④ 发送邮件（使用注入的实例方法）
-        String subject = switch (vt) {
-            case REGISTER -> "GL‑Blog 注册验证码";
-            case PASSWORD_RESET -> "GL‑Blog 找回密码验证码";
-        };
-        String html = """
-                <p>亲爱的用户，您的验证码是 <strong>%s</strong>，有效期 10 分钟。</p>
+        // 4. Send Email
+        String subject = "GL-Blog Verification";
+
+        String htmlContent = """
+                <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                    <h2 style="color: #000;">GL-Blog Verification</h2>
+                    <p>Dear User,</p>
+                    <p>Your verification code is: <strong style="font-size: 18px; color: #0066cc;">%s</strong></p>
+                    <p>This code is valid for 10 minutes.</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="font-size: 12px; color: #999;">If you did not request this, please ignore this email.</p>
+                </div>
                 """.formatted(code);
 
-        // ✅ 实例调用
-        emailUtil.sendHtmlMail(mailFrom, email, subject, html);
+        emailUtil.sendHtmlMail(fromEmail, email, subject, htmlContent);
     }
 
-    /** 校验验证码（找回密码、修改邮箱等） */
-    public void verifyCode(String email, String code, String type) {
-        VerifyCode vc = codeRepo.findTopByEmailAndTypeOrderByExpireAtDesc(email, type)
-                .orElseThrow(() -> new BizException(5001, "验证码不存在"));
-        if (vc.getUsed() || vc.getExpireAt().isBefore(LocalDateTime.now())) {
-            throw new BizException(5002, "验证码已失效或已使用");
-        }
-        if (!vc.getCode().equals(code)) {
-            throw new BizException(5003, "验证码错误");
-        }
-        vc.setUsed(true);
-        codeRepo.save(vc);
-    }
-
-    /** 修改密码（需要先通过验证码校验） */
     @Transactional
-    public void changePassword(String email, String newPassword) {
-        User user = userRepo.findByEmail(email)
-                .orElseThrow(() -> new BizException(6001, "用户不存在"));
-        user.setPassword(passwordEncoder.encode(newPassword));
-        userRepo.save(user);
+    public void verifyCode(String email, String code, String typeStr) {
+        VerifyCode vc = verifyCodeRepository.findTopByEmailAndTypeOrderByExpireAtDesc(email, typeStr)
+                .orElseThrow(() -> new BizException("Verification code does not exist or expired"));
+
+        if (vc.getUsed()) {
+            throw new BizException("Verification code has been used");
+        }
+
+        if (LocalDateTime.now().isAfter(vc.getExpireAt())) {
+            throw new BizException("Verification code has expired");
+        }
+
+        if (!vc.getCode().equals(code)) {
+            throw new BizException("Incorrect verification code");
+        }
+
+        // Mark as used
+        vc.setUsed(true);
+        verifyCodeRepository.save(vc);
     }
 
-    /** 获取当前登录用户的完整信息（供前端 Profile 页面使用） */
     public UserInfoDto getCurrentUserInfo(Long userId) {
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> new BizException(7001, "用户不存在"));
-        return UserInfoDto.from(user);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BizException("User not found"));
+
+        return UserInfoDto.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .nickname(user.getNickname())
+                .email(user.getEmail())
+                .avatar(user.getAvatar())
+                .isAdmin(user.getIsAdmin())
+                .createdAt(user.getCreatedAt())
+                .build();
     }
 
-    /** 更新个人资料（昵称、用户名、头像） */
     @Transactional
     public void updateProfile(Long userId, UpdateProfileRequest req) {
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> new BizException(8001, "用户不存在"));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BizException("User not found"));
 
-        // 若用户名被修改，需要再次校验唯一性
-        if (!user.getUsername().equals(req.getUsername())) {
-            if (userRepo.findByUsername(req.getUsername()).isPresent()) {
-                throw new BizException(8002, "用户名已被占用");
+        if (req.getNickname() != null) user.setNickname(req.getNickname());
+        if (req.getAvatar() != null) user.setAvatar(req.getAvatar());
+
+        // If username changes, check uniqueness
+        if (req.getUsername() != null && !req.getUsername().equals(user.getUsername())) {
+            if (userRepository.findByUsername(req.getUsername()).isPresent()) {
+                throw new BizException("Username already exists");
             }
             user.setUsername(req.getUsername());
         }
 
-        user.setNickname(req.getNickname());
-        if (req.getAvatar() != null) {
-            user.setAvatar(req.getAvatar());
-        }
-        userRepo.save(user);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void changePassword(String email, String newPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BizException("User does not exist"));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
     }
 }
