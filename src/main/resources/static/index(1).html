@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LXLY 个人博客 - 登录</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      display: flex; justify-content: center; align-items: center; min-height: 100vh;
+      background-color: #1a1a1d;
+      background-image: url('./BG/homePage.png'); /* 确保图片路径正确 */
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      position: relative;
+    }
+    body::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.35); z-index: -1; }
+    .login-card {
+      background: rgba(255, 255, 255, 0.96); width: 100%; max-width: 600px; padding: 50px 60px;
+      border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); text-align: center;
+      animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+    .login-card h1 { font-size: 28px; color: #111827; margin-bottom: 15px; font-weight: 700; }
+    .subtitle { font-size: 14px; color: #6b7280; margin-bottom: 40px; line-height: 1.6; font-weight: 500; }
+    .heart-icon { color: #a855f7; display: inline-block; vertical-align: middle; animation: heartbeat 1.5s infinite ease-in-out; }
+    @keyframes heartbeat { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: 0.8; } }
+    .form-group { margin-bottom: 24px; text-align: left; position: relative; }
+    .input-field {
+      width: 100%; padding: 12px 20px; border: 2px solid transparent; background-color: #f3f4f6;
+      border-radius: 6px; font-size: 14px; color: #1f2937; outline: none; transition: all 0.3s ease;
+    }
+    .input-field:focus { background-color: #ffffff; border-color: #1e40af; box-shadow: 0 0 0 4px rgba(30, 64, 175, 0.1); }
+    .toggle-password {
+      position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: none; border: none;
+      cursor: pointer; color: #9ca3af; display: flex; align-items: center; justify-content: center; padding: 5px;
+    }
+    .btn-login {
+      width: 100%; background-color: #1e3a8a; color: white; border: none; padding: 12px;
+      border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; display: flex;
+      align-items: center; justify-content: center; gap: 10px; transition: all 0.2s ease; margin-top: 20px;
+    }
+    .btn-login:hover { background-color: #172554; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3); }
+    .card-footer { margin-top: 35px; display: flex; justify-content: center; align-items: center; font-size: 14px; color: #6b7280; padding-top: 25px; border-top: 1px solid #f3f4f6; }
+    .footer-links a { text-decoration: none; color: #6b7280; transition: color 0.2s; }
+    .footer-links a:hover { color: #1e3a8a; text-decoration: underline; }
+    .divider { margin: 0 20px; color: #d1d5db; }
+  </style>
+</head>
+<body>
+<div class="login-card">
+  <h1>LXLY 个人博客</h1>
+  <p class="subtitle">少年心事当拿云，谁念幽寒坐呜呃 <span class="heart-icon">❤</span></p>
+  <form id="loginForm">
+    <div class="form-group">
+      <input type="text" class="input-field" placeholder="LXLY@example.com" value="2945706262@qq.com" required>
+    </div>
+    <div class="form-group">
+      <input type="password" id="passwordField" class="input-field" placeholder="密码" required>
+      <button type="button" id="toggleBtn" class="toggle-password">
+        <span id="icon-closed"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M4.52 5.935L1.394 2.808l1.414-1.414l19.799 19.798l-1.414 1.415l-3.31-3.31A10.95 10.95 0 0 1 12 21c-5.392 0-9.878-3.88-10.818-9A11 11 0 0 1 4.52 5.935m10.238 10.237l-1.464-1.464a3 3 0 0 1-4.001-4.001L7.829 9.243a5 5 0 0 0 6.929 6.929M7.974 3.76C9.221 3.27 10.58 3 12 12 3c5.392 0 9.878 3.88 10.819 9a10.95 10.95 0 0 1-2.012 4.593l-3.86-3.86Q17 12.373 17 12a5 5 0 0 0-5.732-4.947z"/></svg></span>
+        <span id="icon-open" style="display: none;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M12 9.75a2.25 2.25 0 1 0 0 4.5a2.25 2.25 0 0 0 0-4.5"/><path fill="currentColor" fill-rule="evenodd" d="M12 5.5c-2.618 0-4.972 1.051-6.668 2.353c-.85.652-1.547 1.376-2.036 2.08c-.48.692-.796 1.418-.796 2.067s.317 1.375.796 2.066c.49.705 1.186 1.429 2.036 2.08C7.028 17.45 9.382 18.5 12 18.5s4.972-1.051 6.668-2.353c.85-.652 1.547-1.376 2.035-2.08c.48-.692.797-1.418.797-2.067s-.317-1.375-.797-2.066c-.488-.705-1.185-1.429-2.035-2.08C16.972 6.55 14.618 5.5 12 5.5M8.25 12a3.75 3.75 0 1 1 7.5 0a3.75 3.75 0 0 1-7.5 0" clip-rule="evenodd"/></svg></span>
+      </button>
+    </div>
+    <button type="submit" class="btn-login">
+      登 入 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M11 7L9.6 8.4l2.6 2.6 H2v2h10.2l-2.6 2.6L11 17l5-5zm9 12h-8v2h10V3H12v2h8z"/></svg>
+    </button>
+  </form>
+  <div class="card-footer">
+    <div class="footer-links"><a href="#">注册</a><span class="divider">|</span><a href="#">忘记密码</a></div>
+  </div>
+</div>
+<script>
+  // 密码显示切换
+  const toggleBtn = document.getElementById('toggleBtn');
+  const passwordField = document.getElementById('passwordField');
+  toggleBtn.addEventListener('click', () => {
+    const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+    passwordField.setAttribute('type', type);
+    document.getElementById('icon-closed').style.display = type === 'text' ? 'none' : 'block';
+    document.getElementById('icon-open').style.display = type === 'text' ? 'block' : 'none';
+  });
+
+  // 模拟登录跳转
+  document.getElementById('loginForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    // 实际项目中这里应调用后端API验证
+    window.location.href = 'home.html';
+  });
+</script>
+</body>
+</html>
