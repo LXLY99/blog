@@ -1,6 +1,5 @@
 package org.lxly.blog.service;
 
-import lombok.*;
 import oshi.SystemInfo;
 import oshi.hardware.*;
 import org.springframework.stereotype.*;
@@ -12,31 +11,39 @@ import java.util.*;
 public class ServerStatusService {
 
     private final SystemInfo si = new SystemInfo();
+    private volatile long[] prevCpuTicks;
 
     public Map<String, Object> getStatus() {
         HardwareAbstractionLayer hal = si.getHardware();
-
-        // CPU
         CentralProcessor cpu = hal.getProcessor();
-        long[] prevTicks = cpu.getSystemCpuLoadTicks();
-        //隔一小段时间或下一次调用时
-        double cpuLoad = cpu.getSystemCpuLoadBetweenTicks(prevTicks) * 100;
 
-        // Memory
+        // 1. CPU Load
+        long[] ticks = cpu.getSystemCpuLoadTicks();
+        Double cpuLoad = 0.0; // Default to 0.0 instead of null
+        if (prevCpuTicks != null) {
+            cpuLoad = cpu.getSystemCpuLoadBetweenTicks(prevCpuTicks) * 100.0;
+        }
+        prevCpuTicks = ticks;
+
+        // 2. Memory Usage
         GlobalMemory memory = hal.getMemory();
-        double memUsed = (memory.getTotal() - memory.getAvailable()) * 100.0 / memory.getTotal();
+        long total = memory.getTotal();
+        double memUsed = total > 0
+                ? (total - memory.getAvailable()) * 100.0 / total
+                : 0.0;
 
-        // Load average (1 min)
+        // 3. Load Average (Fixing the NPE here)
         double[] load = cpu.getSystemLoadAverage(3);
-        double loadAvg = load[0]; // 第一个是 1‑minute avg
+        // Map.of() throws NPE if value is null. We use 0.0 as a safe default.
+        double load1m = (load.length > 0 && load[0] >= 0) ? load[0] : 0.0;
 
-        // OS 信息
         OperatingSystem os = si.getOperatingSystem();
 
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("cpu", Map.of("usage", String.format("%.0f", cpuLoad)));
-        map.put("memory", Map.of("usage", String.format("%.0f", memUsed)));
-        map.put("load", Map.of("average", String.format("%.0f", loadAvg * 100)));
+        // Use Math.round to make it cleaner, and ensure no nulls passed to Map.of
+        map.put("cpu", Map.of("usage", Math.round(cpuLoad)));
+        map.put("memory", Map.of("usage", Math.round(memUsed)));
+        map.put("load", Map.of("average", load1m));
         map.put("system", Map.of("os", os.getFamily(), "arch", System.getProperty("os.arch")));
         return map;
     }

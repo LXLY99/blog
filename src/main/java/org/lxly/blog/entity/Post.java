@@ -33,6 +33,9 @@ public class Post {
     @Column(length = 255)
     private String cover;
 
+    @Column(name = "cover_hash")
+    private String coverHash;
+
     @Column(length = 100)
     private String category;
 

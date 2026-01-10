@@ -6,6 +6,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -13,16 +14,25 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtUtil {
 
     private final JwtProperties jwtProperties;
 
-    // Helper to generate the key based on the secret from config
+    /**
+     * 获取签名用的 Key
+     * 注意：配置文件中的 secret 必须是 Base64 编码的字符串！
+     */
     private Key key() {
-        // This is where your error happened because jwtProperties.getSecret() was null
-        byte[] keyBytes = Decoders.BASE64.decode(jwtProperties.getSecret());
+        byte[] keyBytes;
+        try {
+            keyBytes = Decoders.BASE64.decode(jwtProperties.getSecret());
+        } catch (IllegalArgumentException e) {
+            log.error("JWT Secret 配置错误，请确保 blog.jwt.secret 是有效的 Base64 字符串");
+            throw e;
+        }
         return Keys.hmacShaKeyFor(keyBytes);
     }
 

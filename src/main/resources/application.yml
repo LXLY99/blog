@@ -31,6 +31,7 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
+      password: 925115
 
   mvc:
     static-path-pattern: /**
@@ -38,10 +39,20 @@ spring:
     web:
       resources:
         add-mappings: true
+
+  servlet:
+    multipart:
+      max-file-size: 5MB        # SMMS limit is 5MB
+      max-request-size: 5MB
+
+smms:
+  token: 4EWY08X8DEAXz2VHI3uc6O5nr5h6eSJF  # 🔴 Replace this!
+  default-avatar: https://s2.loli.net/2026/01/08/Gv8fl7FQ9kS4ON1.jpg # 🔴 Replace with your uploaded default image URL
+
 minio:
   endpoint: http://127.0.0.1:9000
-  access-key: admin
-  secret-key: admin123456
+  accessKey: minioadmin
+  secretKey: minioadmin
   bucket: blog
 
 logging:

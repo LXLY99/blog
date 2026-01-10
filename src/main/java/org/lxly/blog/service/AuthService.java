@@ -12,6 +12,7 @@ import org.lxly.blog.repository.UserRepository;
 import org.lxly.blog.repository.VerifyCodeRepository;
 import org.lxly.blog.util.EmailUtil;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,9 +28,13 @@ public class AuthService {
     private final VerifyCodeRepository verifyCodeRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailUtil emailUtil;
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
+
+    @Value("${smms.default-avatar}")
+    private String defaultAvatarUrl;
 
     public User login(LoginRequest req) {
         User user = userRepository.findByEmail(req.getEmail())
@@ -43,24 +48,28 @@ public class AuthService {
 
     @Transactional
     public void register(RegisterRequest req) {
-        // 1. Verify Code
-        verifyCode(req.getEmail(), req.getCode(), "register");
+        // 1. Verify Code first
+        // verifyCode(req.getEmail(), req.getCode(), VerifyCodeType.REGISTER.getValue());
 
-        // 2. Check Uniqueness
+        // 2. Check if Email exists
         if (userRepository.findByEmail(req.getEmail()).isPresent()) {
             throw new BizException("Email already registered");
         }
-        if (userRepository.findByUsername(req.getUsername()).isPresent()) {
-            throw new BizException("Username already taken");
-        }
 
-        // 3. Create User
+        // 3. ✅ Generate Fixed Pattern Username using Redis
+        // "blog:user:sequence" will atomically increment: 1, 2, 3...
+        Long seq = redisTemplate.opsForValue().increment("blog:user:sequence");
+        String autoUsername = "lxly_" + seq;
+
+        // 4. Create User
         User user = User.builder()
-                .username(req.getUsername())
                 .email(req.getEmail())
+                .username(autoUsername) // ✅ Fixed Username
                 .password(passwordEncoder.encode(req.getPassword()))
-                .nickname(req.getUsername())
+                .nickname("User_" + seq) // Default nickname (can be changed later)
+                .avatar(defaultAvatarUrl)
                 .isAdmin(false)
+                .createdAt(LocalDateTime.now())
                 .build();
 
         userRepository.save(user);
@@ -173,6 +182,26 @@ public class AuthService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new BizException("User does not exist"));
 
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void resetPassword(String email, String code, String newPassword) {
+        // 1. Verify the code first
+        verifyCode(email, code, "password-reset");
+
+        // 2. Find the user
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BizException("User does not exist"));
+
+        // 3. 🔥 NEW LOGIC: Check if the new password is the same as the old one
+        // We use passwordEncoder.matches(raw, hashed) to compare
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new BizException("New password cannot be the same as the old password");
+        }
+
+        // 4. Update password
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
     }

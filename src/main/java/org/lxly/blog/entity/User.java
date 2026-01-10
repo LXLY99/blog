@@ -45,6 +45,9 @@ public class User {
     @Column(length = 255)
     private String avatar;
 
+    @Column(name = "avatar_hash")
+    private String avatarHash;
+
     /** 是否为管理员（超级权限） */
     @Column(name = "is_admin", nullable = false)
     private Boolean isAdmin = false;

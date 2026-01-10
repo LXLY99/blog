@@ -7,10 +7,16 @@ import org.lxly.blog.dto.request.*;
 import org.lxly.blog.dto.response.Result;
 import org.lxly.blog.dto.response.UserInfoDto;
 import org.lxly.blog.entity.User;
+import org.lxly.blog.repository.UserRepository;
 import org.lxly.blog.service.AuthService;
+import org.lxly.blog.service.SmmsService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 /**
  * <h1>认证与用户管理模块 (Controller Layer)</h1>
@@ -34,6 +40,8 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtUtil jwtUtil;
+    private final UserRepository userRepository;
+    private final SmmsService smmsService;
 
     /**
      * <h2>3.1 用户登录 (User Login)</h2>
@@ -163,9 +171,7 @@ public class AuthController {
      */
     @PostMapping("/reset-password")
     public ResponseEntity<Result<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {
-        // 校验验证码类型固定为 "password-reset"
-        authService.verifyCode(req.getEmail(), req.getCode(), "password-reset");
-        authService.changePassword(req.getEmail(), req.getNewPassword());
+        authService.resetPassword(req.getEmail(), req.getCode(), req.getNewPassword());
         return ResponseEntity.ok(Result.ok(null));
     }
 
@@ -217,17 +223,37 @@ public class AuthController {
      * <li><strong>权限级别:</strong> <span style="color: red">需认证 (Authenticated)</span></li>
      * </ul>
      *
-     * @param authentication 当前登录用户凭证
      * @param req {@link UpdateProfileRequest} 包含新昵称、新头像 URL
      * @return {@link Result} 更新成功提示
      */
     @PutMapping("/user-profile")
-    public ResponseEntity<Result<Void>> updateProfile(
-            Authentication authentication,
-            @Valid @RequestBody UpdateProfileRequest req) {
+    public ResponseEntity<Result<Void>> updateProfile(@RequestBody Map<String, String> req) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long userId = (Long) auth.getPrincipal();
 
-        Long userId = (Long) authentication.getPrincipal();
-        authService.updateProfile(userId, req);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Only allow updating these two fields
+        if (req.containsKey("nickname")) {
+            user.setNickname(req.get("nickname"));
+        }
+        // Handle Avatar Update
+        if (req.containsKey("avatar")) {
+            String newAvatar = req.get("avatar");
+            String newHash = req.get("avatarHash"); // Frontend must send this
+
+            // If avatar changed, delete old one using stored hash
+            if (!newAvatar.equals(user.getAvatar())) {
+                smmsService.delete(user.getAvatarHash(), user.getAvatar());
+            }
+
+            user.setAvatar(newAvatar);
+            user.setAvatarHash(newHash);
+        }
+
+        userRepository.save(user);
         return ResponseEntity.ok(Result.ok(null));
     }
+
 }

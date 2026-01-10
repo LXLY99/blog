@@ -6,6 +6,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j; // 引入 Slf4j 用于日志
 import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -51,23 +52,22 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // ✅ 启用 CORS，并使用下面定义的 corsConfigurationSource
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(unauthorizedHandler))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. 放行 API
+                        // 1. 放行 API (注意：已移除 /api/upload/**)
                         .requestMatchers(
                                 "/api/user-login",
                                 "/api/user-register",
                                 "/api/send-verification-code",
                                 "/api/reset-password",
                                 "/api/settings/**",
-                                "/api/post/**",
-                                "/api/posts",
+                                "/api/post/**", // 获取详情
+                                "/api/posts",   // 获取列表
                                 "/api/stats",
                                 "/api/server-status",
-                                "/api/about",
-                                "/api/upload/**"
+                                "/api/about"
+                                // ❌ 已移除上传接口，上传必须认证！
                         ).permitAll()
                         // 2. 放行静态资源
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
@@ -80,23 +80,13 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * ✅ 核心修复：Spring Security 全局 CORS 配置
-     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-
-        // 🟢 关键点：使用 allowedOriginPatterns 代替 allowedOrigins
-        // 这样即使 allowCredentials 为 true，也可以使用通配符 *
         config.setAllowedOriginPatterns(Collections.singletonList("*"));
-
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"));
         config.setAllowedHeaders(Collections.singletonList("*"));
-
-        // 🟢 允许携带凭证
         config.setAllowCredentials(true);
-
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -107,6 +97,7 @@ public class SecurityConfig {
     /**
      * JWT 过滤器
      */
+    @Slf4j // 需要 lombok 支持
     static class JwtAuthFilter extends OncePerRequestFilter {
 
         private final JwtUtil jwtUtil;
@@ -138,11 +129,13 @@ public class SecurityConfig {
                             new UsernamePasswordAuthenticationToken(userId, null, authorities);
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
-                } catch (Exception ignored) {
-                    // Token 无效不抛异常，由 Spring Security 后续处理
+                } catch (Exception e) {
+                    // ✅ 增加调试日志，便于排查 Token 为什么无效
+                    log.debug("Invalid JWT Token: {}", e.getMessage());
+                    // 必须清除 Context，防止污染
+                    SecurityContextHolder.clearContext();
                 }
             }
-
             filterChain.doFilter(request, response);
         }
     }
